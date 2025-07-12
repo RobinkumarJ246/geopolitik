@@ -2,7 +2,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Users, Flag, Plus, Copy, UserPlus, Bot, Crown, TrendingUp, DollarSign, Shield, Zap } from "lucide-react";
+import { Users, Flag, Plus, Copy, UserPlus, Bot, Crown, TrendingUp, DollarSign, Shield, Zap, MessageSquare } from "lucide-react";
+import dynamic from 'next/dynamic';
+
+// Dynamically import the chat component with SSR disabled
+const LobbyChat = dynamic(
+  () => import('@/components/LobbyChat').then(mod => mod.default),
+  { ssr: false }
+);
 
 export default function ServerLobbyPage() {
   const { id } = useParams();
@@ -19,6 +26,8 @@ export default function ServerLobbyPage() {
   const [error, setError] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [activeEmojis, setActiveEmojis] = useState({});
+  const [showChat, setShowChat] = useState(false);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -98,6 +107,15 @@ export default function ServerLobbyPage() {
   const nationsWithFlags = nations.map(n=> ({...n, isBot: n.ownerId === 'BOT'}));
   const playerNations = nationsWithFlags.filter(n=>!n.isBot).
     sort((a,b)=> (a.ownerId===hostId?-1:b.ownerId===hostId?1:0));
+    
+  // Update active emojis when new emoji reactions come in
+  const handleNewEmoji = (userId, emojiData) => {
+    setActiveEmojis(prev => ({
+      ...prev,
+      [userId]: emojiData
+    }));
+  };
+  
   const botNations = nationsWithFlags.filter(n=>n.isBot);
   const orderedNations = [...playerNations, ...botNations];
 
@@ -301,7 +319,7 @@ export default function ServerLobbyPage() {
       console.error('Start game error:', error);
       alert('Start failed');
     }
-    };
+  };
 
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
@@ -387,214 +405,170 @@ export default function ServerLobbyPage() {
                     )}
                     Populate Bots
                   </button>
-                  {/*}
-                  <button
-                    onClick={handleAddBot}
-                    disabled={botLoading}
-                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {botLoading ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                    Add Bot
-                  </button>
-                  {*/}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4">
-          {['all', 'players', 'bots'].map(t => (
-            <button 
-              key={t} 
-              onClick={() => setTab(t)} 
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                tab === t 
-                  ? 'bg-emerald-600 text-white shadow-lg' 
-                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-3">
-            <span className={allReady ? 'text-emerald-400' : 'text-yellow-400'}>
-              {allReady ? 'All players ready' : 'Waiting...'}
-            </span>
-            {playersReady.includes(userId) ? (
-              <button 
-                onClick={handleReadyToggle} 
-                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors"
-              >
-                Unready
-              </button>
-            ) : (
-              <button 
-                onClick={handleReadyToggle} 
-                className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition-colors"
-              >
-                Ready
-              </button>
-            )}
-            {isHost && (
-              <button 
-                onClick={startGame} 
-                disabled={!allReady} 
-                className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Start Game
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Nations Section */}
-        <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 sm:p-8">
-          <div className="flex items-center gap-2 mb-6">
-            <Flag className="w-6 h-6 text-emerald-400" />
-            <h2 className="text-2xl font-bold">Nations</h2>
-            <div className="ml-auto bg-slate-700/50 px-3 py-1 rounded-full text-sm">
-              {filteredNations.length} of {nations.length}
-            </div>
-          </div>
-
-          {filteredNations.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-24 h-24 bg-slate-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Flag className="w-12 h-12 text-gray-500" />
+        {/* Main Content */}
+        <div className="lg:grid lg:grid-cols-3 lg:gap-8">
+          {/* Left Column - Tabs and Nations */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Tabs and Ready Controls */}
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex gap-2">
+                {['all', 'players', 'bots'].map(t => (
+                  <button 
+                    key={t} 
+                    onClick={() => setTab(t)} 
+                    className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                      tab === t 
+                        ? 'bg-emerald-600 text-white shadow-lg' 
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
               </div>
-              <p className="text-gray-400 text-lg mb-2">
-                {tab === 'all' ? 'No nations yet' : `No ${tab} found`}
-              </p>
-              <p className="text-gray-500 text-sm">
-                {tab === 'all' ? 'Be the first to create a nation in this server!' : `Switch to another tab to see more nations.`}
-              </p>
+              
+              <div className="flex items-center gap-3 sm:ml-auto">
+                <span className={allReady ? 'text-emerald-400' : 'text-yellow-400'}>
+                  {allReady ? 'All players ready' : 'Waiting...'}
+                </span>
+                {playersReady.includes(userId) ? (
+                  <button 
+                    onClick={handleReadyToggle} 
+                    className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Unready
+                  </button>
+                ) : (
+                  <button 
+                    onClick={handleReadyToggle} 
+                    className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Ready
+                  </button>
+                )}
+                {isHost && (
+                  <button 
+                    onClick={startGame} 
+                    disabled={!allReady} 
+                    className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Start Game
+                  </button>
+                )}
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredNations.map((nation) => (
-                <div 
-                  key={nation._id} 
-                  className="group bg-slate-800/80 hover:bg-slate-700/80 rounded-xl border border-slate-700/50 hover:border-slate-600/50 p-6 transition-all duration-200 hover:shadow-lg hover:shadow-slate-900/50 transform hover:scale-105"
-                >
-                  {/* Nation Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center"
-                        style={{ backgroundColor: nation.flagColor || '#6b7280' }}
-                      >
-                        <Flag className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-lg text-white group-hover:text-emerald-400 transition-colors">
-                          {nation.name}
-                        </h3>
-                        <p className="text-sm text-gray-400">{nation.governmentType}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {nation.ownerId === userId && (
-                        <div className="bg-emerald-600 text-white px-2 py-1 rounded-md text-xs font-medium">
-                          Your Nation
-                        </div>
-                      )}
-                      {nation.isBot && (
-                        <div className="bg-purple-600 text-white px-2 py-1 rounded-md text-xs font-medium">
-                          Bot
-                        </div>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Player Info */}
-                  <div className="text-sm text-gray-400 mb-4 pb-4 border-b border-slate-700/50">
-                    <span>Ruler: </span>
-                    <span className="text-gray-300">{nation.ownerName}</span>
-                    {nation.ownerId === userId && (
-                      <span className="text-emerald-400"> (You)</span>
-                    )}
-                  </div>
-
-                  {/* Stats Grid */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-blue-400" />
-                        <span className="text-sm text-gray-400">Population</span>
-                      </div>
-                      <span className="text-sm font-medium text-white">
-                        {(nation.data?.population ?? 0).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-emerald-400" />
-                        <span className="text-sm text-gray-400">Treasury</span>
-                      </div>
-                      <span className="text-sm font-medium text-white">
-                        ${(nation.data?.treasury ?? 0).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4 text-yellow-400" />
-                        <span className="text-sm text-gray-400">GDP</span>
-                      </div>
-                      <span className="text-sm font-medium text-white">
-                        ${(nation.data?.gdp ?? 0).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      <div className="text-xs">
-                        <span className="text-gray-500">Food: </span>
-                        <span className="text-orange-400">{(nation.data?.food ?? 0).toLocaleString()}</span>
-                      </div>
-                      <div className="text-xs">
-                        <span className="text-gray-500">Oil: </span>
-                        <span className="text-purple-400">{(nation.data?.oil ?? 0).toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-700/50">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-4 h-4 text-red-400" />
-                        <span className="text-sm text-gray-400">Military</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-xs">
-                        <div>
-                          <span className="text-gray-500">Soldiers</span>
-                          <div className="text-red-400 font-medium">
-                            {(nation.data?.military?.soldiers ?? 0).toLocaleString()}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Tanks</span>
-                          <div className="text-red-400 font-medium">
-                            {(nation.data?.military?.tanks ?? 0).toLocaleString()}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Aircraft</span>
-                          <div className="text-red-400 font-medium">
-                            {(nation.data?.military?.aircraft ?? 0).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+            {/* Nations Section */}
+            <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-6">
+                <Flag className="w-6 h-6 text-emerald-400" />
+                <h2 className="text-2xl font-bold">Nations</h2>
+                <div className="ml-auto bg-slate-700/50 px-3 py-1 rounded-full text-sm">
+                  {filteredNations.length} of {nations.length}
                 </div>
-              ))}
+              </div>
+
+              <div className="space-y-4">
+                {filteredNations.map((nation) => (
+                  <div key={nation.id} className="bg-slate-700/40 rounded-xl p-4 border border-slate-600/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                          <Flag className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-lg">{nation.name}</h3>
+                          <div className="flex items-center gap-2 text-sm text-gray-400">
+                            <span>{nation.isBot ? 'Bot' : 'Player'}</span>
+                            {nation.ownerId === hostId && (
+                              <span className="text-yellow-400">• Host</span>
+                            )}
+                            {playersReady.includes(nation.ownerId) && !nation.isBot && (
+                              <span className="text-emerald-400">• Ready</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {activeEmojis[nation.ownerId] && (
+                        <div className="animate-bounce">
+                          {activeEmojis[nation.ownerId]}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="flex items-center gap-1 mb-2">
+                          <DollarSign className="w-4 h-4 text-emerald-400" />
+                          <span className="text-gray-400">Economy</span>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">GDP</span>
+                            <span className="text-emerald-400 font-medium">
+                              ${(nation.data?.economy?.gdp ?? 0).toLocaleString()}B
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Population</span>
+                            <span className="text-blue-400 font-medium">
+                              {(nation.data?.economy?.population ?? 0).toLocaleString()}M
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-1 mb-2">
+                          <Shield className="w-4 h-4 text-red-400" />
+                          <span className="text-gray-400">Military</span>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Soldiers</span>
+                            <span className="text-red-400 font-medium">
+                              {(nation.data?.military?.soldiers ?? 0).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Tanks</span>
+                            <span className="text-red-400 font-medium">
+                              {(nation.data?.military?.tanks ?? 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
+          </div>
+
+          {/* Right Column - Chat */}
+          <div className="mt-6 lg:mt-0">
+            <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 h-[600px] flex flex-col">
+              <div className="flex items-center gap-2 mb-4">
+                <MessageSquare className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-semibold">Lobby Chat</h3>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <LobbyChat 
+                  serverId={id} 
+                  userId={server?.currentUser?.id} 
+                  username={server?.currentUser?.username}
+                  onNewEmoji={handleNewEmoji}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

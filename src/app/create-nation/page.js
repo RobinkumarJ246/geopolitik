@@ -1,9 +1,9 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Flag } from "lucide-react";
 
-export default function CreateNationPage() {
+function CreateNationForm() {
   const router = useRouter();
   const params = useSearchParams();
   const serverId = params.get("serverId");
@@ -89,5 +89,19 @@ export default function CreateNationPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function CreateNationPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6">
+        <div className="bg-slate-800 p-8 rounded w-full max-w-md text-center">
+          <p className="text-white">Loading...</p>
+        </div>
+      </div>
+    }>
+      <CreateNationForm />
+    </Suspense>
   );
 }
