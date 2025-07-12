@@ -22,10 +22,9 @@ export async function POST(request) {
     const server = await servers.findOne({ _id: new ObjectId(serverId) });
     if (!server) return new Response(JSON.stringify({ error: "Server not found" }), { status: 404 });
 
-    // for now only allow host to create nations until join flow implemented
-    if (server.hostUserId !== decoded.id) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
-    }
+    // allow any authenticated user to create one nation per server (host or invited)
+    // TODO: later validate that user is part of server's player list
+
 
     const nations = db.collection("nations");
     const existing = await nations.findOne({ serverId: new ObjectId(serverId), ownerId: decoded.id });

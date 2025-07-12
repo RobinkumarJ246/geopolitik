@@ -33,7 +33,8 @@ export async function POST(request) {
       gameSpeed,
       victoryType,
       createdAt: new Date(),
-      status: "waiting", // waiting, running, finished
+      status: "waiting", // waiting, ready, in-progress
+      playersReady: []
     });
 
     return new Response(JSON.stringify({ id: result.insertedId }), { status: 201 });

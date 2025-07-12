@@ -10,10 +10,15 @@ export default function ServerLobbyPage() {
   const [server, setServer] = useState(null);
   const [nations, setNations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [playersReady, setPlayersReady] = useState([]);
+  const [allReady, setAllReady] = useState(false);
+  const [populateLoading, setPopulateLoading] = useState(false);
+  const [tab, setTab] = useState("all");
+  const [botLoading, setBotLoading] = useState(false);
+  const [botCountInput, setBotCountInput] = useState(100);
   const [error, setError] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
-  const [botLoading, setBotLoading] = useState(false);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -30,20 +35,79 @@ export default function ServerLobbyPage() {
           fetch(`/api/server/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`/api/nation?serverId=${id}`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
+        
         if (!srvRes.ok) throw new Error("Failed to load server");
         if (!natRes.ok) throw new Error("Failed to load nations");
+        
         const srv = await srvRes.json();
         const natList = await natRes.json();
         setServer(srv);
         setNations(natList);
+
+        // after initial data, also fetch ready info
+        try {
+          const readyRes = await fetch(`/api/ready?serverId=${id}`, { 
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store' 
+          });
+          if (readyRes.ok) {
+            const r = await readyRes.json();
+            setPlayersReady(r.playersReady || []);
+            setAllReady(r.allReady || false);
+            setServer(prev=> prev ? { ...prev, status: r.status } : prev );
+          }
+        } catch (readyError) {
+          console.warn("Failed to fetch ready status:", readyError);
+        }
       } catch (e) {
         setError(e.message);
       } finally {
         setLoading(false);
       }
     }
+    
     fetchData();
   }, [id, token, router]);
+
+  // poll ready state every 5s
+  useEffect(() => {
+    if (!server || !token) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/ready?serverId=${id}`, { 
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store' 
+        });
+        if (res.ok) {
+          const r = await res.json();
+          setPlayersReady(r.playersReady || []);
+          setAllReady(r.allReady || false);
+          setServer(prev=> prev ? { ...prev, status: r.status } : prev );
+        }
+      } catch (error) {
+        console.warn("Failed to poll ready status:", error);
+      }
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [server, id, token]);
+
+  // Mark bots and sort
+  const hostId = server?.hostUserId;
+  const nationsWithFlags = nations.map(n=> ({...n, isBot: n.ownerId === 'BOT'}));
+  const playerNations = nationsWithFlags.filter(n=>!n.isBot).
+    sort((a,b)=> (a.ownerId===hostId?-1:b.ownerId===hostId?1:0));
+  const botNations = nationsWithFlags.filter(n=>n.isBot);
+  const orderedNations = [...playerNations, ...botNations];
+
+  // Get filtered nations based on tab
+  const filteredNations = orderedNations.filter(nation => {
+    if (tab === "all") return true;
+    if (tab === "players") return !nation.isBot;
+    if (tab === "bots") return nation.isBot;
+    return true;
+  });
 
   if (loading) {
     return (
@@ -73,6 +137,16 @@ export default function ServerLobbyPage() {
     );
   }
 
+  if (!server) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="text-center">
+          <p className="text-white text-lg">Server not found</p>
+        </div>
+      </div>
+    );
+  }
+
   const payload = JSON.parse(atob(token.split('.')[1]));
   const userId = payload.id;
   const hasNation = nations.some((n) => n.ownerId === userId);
@@ -97,17 +171,53 @@ export default function ServerLobbyPage() {
       } else {
         alert(data.error || 'Failed to generate invite');
       }
-    } catch {
+    } catch (error) {
+      console.error('Invite error:', error);
       alert('Failed to generate invite');
     } finally {
       setInviteLoading(false);
     }
   };
 
+  const handlePopulateBots = async () => {
+    const countStr = prompt("How many bots to generate? (50-200)", String(botCountInput));
+    if (!countStr) return;
+    
+    const num = parseInt(countStr);
+    if (isNaN(num) || num < 50 || num > 200) {
+      alert("Enter number between 50 and 200");
+      return;
+    }
+    
+    setPopulateLoading(true);
+    try {
+      const res = await fetch('/api/bots/populate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ serverId: id, count: num }),
+      });
+      
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to populate bots');
+      }
+    } catch (error) {
+      console.error('Populate bots error:', error);
+      alert('Failed to populate bots');
+    } finally {
+      setPopulateLoading(false);
+    }
+  };
+
   const handleAddBot = async () => {
     setBotLoading(true);
     try {
-      const res = await fetch('/api/bot', {
+      const res = await fetch('/api/bots/add', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,13 +225,15 @@ export default function ServerLobbyPage() {
         },
         body: JSON.stringify({ serverId: id }),
       });
+      
       if (res.ok) {
-        location.reload();
+        window.location.reload();
       } else {
         const data = await res.json();
         alert(data.error || 'Failed to add bot');
       }
-    } catch {
+    } catch (error) {
+      console.error('Add bot error:', error);
       alert('Failed to add bot');
     } finally {
       setBotLoading(false);
@@ -137,10 +249,64 @@ export default function ServerLobbyPage() {
     }
   };
 
+  const handleReadyToggle = async () => {
+    try {
+      const res = await fetch('/api/ready', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ serverId: id }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setPlayersReady(data.playersReady || []);
+        setAllReady(data.allReady || false);
+        setServer(prev=> prev ? { ...prev, status: data.status } : prev );
+      }
+    } catch (error) {
+      console.error('Ready toggle error:', error);
+    }
+  };
+
+  // Feature flag for start game implementation
+  const ENABLE_START_GAME = false;
+
+  const startGame = async () => {
+    if (!ENABLE_START_GAME) {
+      alert('🤩 Thank you for checking out the beta release, you are an early star. Please wait until the game is ready.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/server/start', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ serverId: id }),
+      });
+      
+      if (!res.ok) {
+        const d = await res.json();
+        alert(d.error || 'Cannot start');
+      } else {
+        alert('Game started!');
+        // Optionally redirect to game view
+        // router.push(`/game/${id}`);
+      }
+    } catch (error) {
+      console.error('Start game error:', error);
+      alert('Start failed');
+    }
+    };
+
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case 'active': return '🟢';
-      case 'paused': return '🟡';
+      case 'ready': return '🟢';
+      case 'waiting': return '🟡';
       case 'ended': return '🔴';
       default: return '⚪';
     }
@@ -198,7 +364,6 @@ export default function ServerLobbyPage() {
               {isHost && (
                 <div className="flex gap-2">
                   <button
-                    
                     onClick={handleInvite}
                     disabled={inviteLoading}
                     className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -208,8 +373,21 @@ export default function ServerLobbyPage() {
                     ) : (
                       <UserPlus className="w-4 h-4" />
                     )}
-                    ${inviteCopied ? 'Copied!' : 'Invite Players'}
+                    {inviteCopied ? 'Copied!' : 'Invite Players'}
                   </button>
+                  <button
+                    onClick={handlePopulateBots}
+                    disabled={populateLoading}
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {populateLoading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <Bot className="w-4 h-4" />
+                    )}
+                    Populate Bots
+                  </button>
+                  {/*}
                   <button
                     onClick={handleAddBot}
                     disabled={botLoading}
@@ -218,13 +396,60 @@ export default function ServerLobbyPage() {
                     {botLoading ? (
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                     ) : (
-                      <Bot className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
                     )}
                     Add Bot
                   </button>
+                  {*/}
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-4">
+          {['all', 'players', 'bots'].map(t => (
+            <button 
+              key={t} 
+              onClick={() => setTab(t)} 
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                tab === t 
+                  ? 'bg-emerald-600 text-white shadow-lg' 
+                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+              }`}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-3">
+            <span className={allReady ? 'text-emerald-400' : 'text-yellow-400'}>
+              {allReady ? 'All players ready' : 'Waiting...'}
+            </span>
+            {playersReady.includes(userId) ? (
+              <button 
+                onClick={handleReadyToggle} 
+                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors"
+              >
+                Unready
+              </button>
+            ) : (
+              <button 
+                onClick={handleReadyToggle} 
+                className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition-colors"
+              >
+                Ready
+              </button>
+            )}
+            {isHost && (
+              <button 
+                onClick={startGame} 
+                disabled={!allReady} 
+                className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Start Game
+              </button>
+            )}
           </div>
         </div>
 
@@ -234,21 +459,25 @@ export default function ServerLobbyPage() {
             <Flag className="w-6 h-6 text-emerald-400" />
             <h2 className="text-2xl font-bold">Nations</h2>
             <div className="ml-auto bg-slate-700/50 px-3 py-1 rounded-full text-sm">
-              {nations.length} total
+              {filteredNations.length} of {nations.length}
             </div>
           </div>
 
-          {nations.length === 0 ? (
+          {filteredNations.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-24 h-24 bg-slate-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Flag className="w-12 h-12 text-gray-500" />
               </div>
-              <p className="text-gray-400 text-lg mb-2">No nations yet</p>
-              <p className="text-gray-500 text-sm">Be the first to create a nation in this server!</p>
+              <p className="text-gray-400 text-lg mb-2">
+                {tab === 'all' ? 'No nations yet' : `No ${tab} found`}
+              </p>
+              <p className="text-gray-500 text-sm">
+                {tab === 'all' ? 'Be the first to create a nation in this server!' : `Switch to another tab to see more nations.`}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {nations.map((nation) => (
+              {filteredNations.map((nation) => (
                 <div 
                   key={nation._id} 
                   className="group bg-slate-800/80 hover:bg-slate-700/80 rounded-xl border border-slate-700/50 hover:border-slate-600/50 p-6 transition-all duration-200 hover:shadow-lg hover:shadow-slate-900/50 transform hover:scale-105"
@@ -269,11 +498,18 @@ export default function ServerLobbyPage() {
                         <p className="text-sm text-gray-400">{nation.governmentType}</p>
                       </div>
                     </div>
-                    {nation.ownerId === userId && (
-                      <div className="bg-emerald-600 text-white px-2 py-1 rounded-md text-xs font-medium">
-                        Your Nation
-                      </div>
-                    )}
+                    <div className="flex flex-col gap-1">
+                      {nation.ownerId === userId && (
+                        <div className="bg-emerald-600 text-white px-2 py-1 rounded-md text-xs font-medium">
+                          Your Nation
+                        </div>
+                      )}
+                      {nation.isBot && (
+                        <div className="bg-purple-600 text-white px-2 py-1 rounded-md text-xs font-medium">
+                          Bot
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Player Info */}
