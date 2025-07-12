@@ -1,5 +1,5 @@
-import clientPromise from "@/lib/mongodb";
-import { verifyToken } from "@/lib/auth";
+import clientPromise from "../../../../lib/mongodb";
+import { verifyToken } from "../../../../lib/auth";
 
 export async function PUT(request) {
   try {
