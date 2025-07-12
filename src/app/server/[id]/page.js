@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Users, Flag, Plus, Copy, UserPlus, Bot, Crown, TrendingUp, DollarSign, Shield, Zap, MessageSquare } from "lucide-react";
+import { Users, Flag, Plus, Copy, UserPlus, Bot, Crown, TrendingUp, DollarSign, Shield, Zap, MessageSquare, ChevronRight, ChevronDown, X, Maximize2, Minimize2 } from "lucide-react";
 import dynamic from 'next/dynamic';
 
 // Dynamically import the chat component with SSR disabled
@@ -28,6 +28,13 @@ export default function ServerLobbyPage() {
   const [inviteCopied, setInviteCopied] = useState(false);
   const [activeEmojis, setActiveEmojis] = useState({});
   const [showChat, setShowChat] = useState(false);
+  
+  // Chat state
+  const [chatExpanded, setChatExpanded] = useState(false);
+  const [chatMinimized, setChatMinimized] = useState(false);
+  const [chatFullscreen, setChatFullscreen] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [lastMessageTime, setLastMessageTime] = useState(null);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -101,6 +108,21 @@ export default function ServerLobbyPage() {
     
     return () => clearInterval(interval);
   }, [server, id, token]);
+
+  // Handle new message notifications
+  const handleNewMessage = (messageTime) => {
+    if ((!chatExpanded && !chatFullscreen) || chatMinimized) {
+      setHasNewMessages(true);
+      setLastMessageTime(messageTime);
+    }
+  };
+
+  // Clear new message indicator when chat is opened
+  useEffect(() => {
+    if (chatExpanded || chatFullscreen) {
+      setHasNewMessages(false);
+    }
+  }, [chatExpanded, chatFullscreen]);
 
   // Mark bots and sort
   const hostId = server?.hostUserId;
@@ -330,8 +352,43 @@ export default function ServerLobbyPage() {
     }
   };
 
+  // Chat toggle functions
+  const toggleChat = () => {
+    setChatExpanded(!chatExpanded);
+    if (!chatExpanded) {
+      setHasNewMessages(false);
+    }
+  };
+
+  const toggleChatMinimize = () => {
+    setChatMinimized(!chatMinimized);
+    if (!chatMinimized) {
+      setHasNewMessages(false);
+    } else {
+      setChatExpanded(false);
+      setChatFullscreen(false);
+    }
+  };
+
+  const toggleChatFullscreen = () => {
+    setChatFullscreen(!chatFullscreen);
+    if (!chatFullscreen) {
+      setHasNewMessages(false);
+    }
+  };
+
+  const closeChatFullscreen = () => {
+    setChatFullscreen(false);
+  };
+
+  const openChat = () => {
+    setChatMinimized(false);
+    setChatExpanded(true);
+    setHasNewMessages(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header Section */}
         <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 sm:p-8 mb-8">
@@ -412,9 +469,9 @@ export default function ServerLobbyPage() {
         </div>
 
         {/* Main Content */}
-        <div className="lg:grid lg:grid-cols-3 lg:gap-8">
+        <div className={`${chatFullscreen ? 'hidden' : ''} lg:grid lg:grid-cols-3 lg:gap-8`}>
           {/* Left Column - Tabs and Nations */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className={`${chatExpanded ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-6`}>
             {/* Tabs and Ready Controls */}
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
               <div className="flex gap-2">
@@ -476,7 +533,7 @@ export default function ServerLobbyPage() {
 
               <div className="space-y-4">
                 {filteredNations.map((nation) => (
-                  <div key={nation.id} className="bg-slate-700/40 rounded-xl p-4 border border-slate-600/30">
+                  <div key={nation._id} className="bg-slate-700/40 rounded-xl p-4 border border-slate-600/30">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
@@ -552,24 +609,132 @@ export default function ServerLobbyPage() {
             </div>
           </div>
 
-          {/* Right Column - Chat */}
-          <div className="mt-6 lg:mt-0">
-            <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 h-[600px] flex flex-col">
-              <div className="flex items-center gap-2 mb-4">
+          {/* Right Column - Chat (Desktop) */}
+          {!chatExpanded && (
+            <div className="mt-6 lg:mt-0 hidden lg:block">
+              <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 h-[600px] flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-lg font-semibold">Lobby Chat</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={toggleChatMinimize}
+                      className="p-1 hover:bg-slate-700 rounded-lg transition-colors"
+                      title="Minimize chat"
+                    >
+                      <Minimize2 className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button
+                      onClick={toggleChatFullscreen}
+                      className="p-1 hover:bg-slate-700 rounded-lg transition-colors"
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <LobbyChat 
+                    serverId={id} 
+                    userId={server?.currentUser?.id} 
+                    username={server?.currentUser?.username}
+                    onNewEmoji={handleNewEmoji}
+                    onNewMessage={handleNewMessage}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Floating Chat Button (Minimized State) */}
+        {(chatMinimized || (!chatExpanded && !chatFullscreen)) && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <button
+              onClick={openChat}
+              className="relative bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-full shadow-lg transition-all duration-200 transform hover:scale-105"
+            >
+              <MessageSquare className="w-6 h-6" />
+              {hasNewMessages && (
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Expanded Chat Overlay (Mobile/Tablet) */}
+        {chatExpanded && (
+          <div className="lg:hidden fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-40 flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <div className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-lg font-semibold">Lobby Chat</h3>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <LobbyChat 
-                  serverId={id} 
-                  userId={server?.currentUser?.id} 
-                  username={server?.currentUser?.username}
-                  onNewEmoji={handleNewEmoji}
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleChatMinimize}
+                  className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                  title="Minimize chat"
+                >
+                  <Minimize2 className="w-5 h-5 text-gray-400" />
+                </button>
+                <button
+                  onClick={toggleChat}
+                  className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
               </div>
             </div>
+            <div className="flex-1 overflow-hidden p-4">
+              <LobbyChat 
+                serverId={id} 
+                userId={server?.currentUser?.id} 
+                username={server?.currentUser?.username}
+                onNewEmoji={handleNewEmoji}
+                onNewMessage={handleNewMessage}
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Fullscreen Chat (Desktop) */}
+        {chatFullscreen && (
+          <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-40 flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-6 h-6 text-emerald-400" />
+                <h3 className="text-xl font-semibold">Lobby Chat</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleChatMinimize}
+                  className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                  title="Minimize chat"
+                >
+                  <Minimize2 className="w-6 h-6 text-gray-400" />
+                </button>
+                <button
+                  onClick={closeChatFullscreen}
+                  className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6 text-gray-400" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden p-6">
+              <LobbyChat 
+                serverId={id} 
+                userId={server?.currentUser?.id} 
+                username={server?.currentUser?.username}
+                onNewEmoji={handleNewEmoji}
+                onNewMessage={handleNewMessage}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

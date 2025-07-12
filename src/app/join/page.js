@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function JoinPage() {
+function JoinForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get("token");
@@ -90,5 +90,17 @@ export default function JoinPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+        Loading invite...
+      </div>
+    }>
+      <JoinForm />
+    </Suspense>
   );
 }
